@@ -196,12 +196,22 @@ jobs:
         run: uv sync --frozen --all-extras
 
       # Vérifie les violations de style (erreurs bloquantes).
+      # --extend-ignore=DJ001 : aligné avec le pre-commit backend
+      #   (null=True sur CharField est un choix délibéré du projet)
+      # --extend-ignore=C420  : dict comprehension avec valeur fixe
+      #   ne peut pas être remplacée par dict.fromkeys() proprement
+      # --extend-exclude=notebooks : les notebooks ont leurs propres
+      #   conventions d'imports, exclus du lint CI
       - name: Ruff lint check
-        run: uv run ruff check .
+        run: |
+          uv run ruff check . \
+            --extend-ignore=DJ001,C420 \
+            --extend-exclude=notebooks
 
       # Vérifie le formatage du code (équivalent à black --check).
+      # Les notebooks sont exclus du format check également.
       - name: Ruff format check
-        run: uv run ruff format --check .
+        run: uv run ruff format --check . --exclude=notebooks
 
   # ==============================================================
   # JOB 4 : Scan de sécurité Backend
