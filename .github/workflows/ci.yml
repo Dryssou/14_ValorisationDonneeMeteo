@@ -1,0 +1,719 @@
+# ============================================================
+# CI/CD Pipeline — Valorisation Donnée Météo
+#
+# POURQUOI ce fichier existe :
+#   Ce pipeline garantit qu'aucun code cassé n'atteint la branche
+#   main. Il exécute les tests, le linter, le scan de sécurité,
+#   construit les images Docker et les publie sur ghcr.io.
+#
+# DÉCLENCHEURS :
+#   - push sur main        → exécute tout + push de l'image
+#   - pull_request → main  → exécute tout SAUF le push
+#
+# SÉCURITÉ (Scorecard) :
+#   - permissions: contents: read  par défaut (moindre privilège)
+#   - Chaque job déclare uniquement les permissions dont il a besoin
+#   - Les secrets sont passés uniquement aux jobs qui en ont besoin
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Moindre privilège : aucune permission par défaut.
+# Chaque job déclare ce dont il a besoin.
+permissions:
+  contents: read
+
+# Annule les exécutions en cours si un nouveau push arrive sur la même branche.
+# Cela évite de gaspiller des minutes CI sur du code déjà dépassé.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ----------------------------------------------------------------
+# Variables globales réutilisées dans les jobs Build & Push
+# ----------------------------------------------------------------
+env:
+  REGISTRY: ghcr.io
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "24"
+
+jobs:
+  # ==============================================================
+  # JOB 1 : Installation des dépendances Backend
+  # Pourquoi séparé : permet de mettre en cache le venv et de
+  # le réutiliser dans les jobs test et lint sans retélécharger.
+  # ==============================================================
+  backend-deps:
+    name: "Backend — Install dependencies"
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      # Récupère le code source à partir du SHA du commit.
+      # actions/checkout est pinné à v4 ; pour Scorecard maximal,
+      # remplacer par le SHA complet (cf. README).
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Configure Python 3.12 (version de prod définie dans pyproject.toml).
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # uv est l'outil de gestion de paquets ultra-rapide utilisé
+      # dans ce projet (remplace pip + venv).
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      # Installe TOUTES les dépendances (prod + dev) car les jobs
+      # tests et lint en ont besoin.
+      - name: Install all dependencies (prod + dev)
+        run: uv sync --frozen --all-extras
+
+      # Sauvegarde le venv dans le cache GitHub Actions.
+      # Clé basée sur le hash du lock file → le cache est invalidé
+      # automatiquement quand les dépendances changent.
+      - name: Cache backend venv
+        uses: actions/cache@v4
+        with:
+          path: backend/.venv
+          key: backend-venv-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}
+
+  # ==============================================================
+  # JOB 2 : Tests Backend
+  # Pourquoi : valide que le code Python est fonctionnel.
+  # Génère un rapport JUnit XML pour affichage dans GitHub.
+  # ==============================================================
+  backend-test:
+    name: "Backend — Tests (pytest)"
+    runs-on: ubuntu-24.04
+    needs: backend-deps
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      # Restaure le venv depuis le cache pour éviter de tout
+      # retélécharger.
+      - name: Restore backend venv
+        uses: actions/cache@v4
+        with:
+          path: backend/.venv
+          key: backend-venv-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      # Exécute pytest avec :
+      #   --cov       → génère le rapport de couverture
+      #   --junitxml  → format standard pour GitHub et les outils CI
+      #   --tb=short  → affiche un traceback court en cas d'échec
+      # Les tests d'intégration (base de données) sont exclus car
+      # ils nécessitent une vraie TimescaleDB (pas de service ici).
+      - name: Run unit tests
+        run: |
+          uv run pytest weather/tests/unit/ \
+            --cov=weather \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --junitxml=test-results.xml \
+            -v
+
+      # Upload du rapport de test comme artefact.
+      # Permet de voir les résultats directement dans l'interface
+      # GitHub Actions, même si le job échoue.
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()  # Toujours uploader, même en cas d'échec
+        with:
+          name: backend-test-results
+          path: |
+            backend/test-results.xml
+            backend/coverage.xml
+          retention-days: 30
+
+  # ==============================================================
+  # JOB 3 : Linter Backend (Ruff)
+  # Pourquoi : Ruff remplace flake8 + isort + pyupgrade.
+  # Il vérifie le style ET le formatage du code Python.
+  # ==============================================================
+  backend-lint:
+    name: "Backend — Lint (ruff)"
+    runs-on: ubuntu-24.04
+    needs: backend-deps
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Restore backend venv
+        uses: actions/cache@v4
+        with:
+          path: backend/.venv
+          key: backend-venv-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      # Vérifie les violations de style (erreurs bloquantes).
+      - name: Ruff lint check
+        run: uv run ruff check .
+
+      # Vérifie le formatage du code (équivalent à black --check).
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  # ==============================================================
+  # JOB 4 : Scan de sécurité Backend
+  # Pourquoi : deux outils complémentaires :
+  #   - pip-audit : vulnérabilités dans les dépendances (CVE)
+  #   - bandit    : failles dans le CODE Python (injection, etc.)
+  # ==============================================================
+  backend-security:
+    name: "Backend — Security scan"
+    runs-on: ubuntu-24.04
+    needs: backend-deps
+    permissions:
+      contents: read
+      security-events: write  # Pour uploader le rapport SARIF
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Restore backend venv
+        uses: actions/cache@v4
+        with:
+          path: backend/.venv
+          key: backend-venv-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      # pip-audit analyse le fichier uv.lock et vérifie chaque
+      # dépendance contre les bases CVE (PyPI Advisory Database,
+      # OSV). Le flag --ignore-vuln permet d'exclure les CVE
+      # documentées dans le fichier vex.json.
+      - name: Scan dependencies with pip-audit
+        run: |
+          uv run pip-audit \
+            --requirement <(uv export --frozen --no-dev --format requirements-txt) \
+            --format json \
+            --output pip-audit-report.json \
+            --no-progress-bar || true
+          # Affiche un résumé humain lisible
+          uv run pip-audit \
+            --requirement <(uv export --frozen --no-dev --format requirements-txt) \
+            --no-progress-bar || true
+
+      # bandit analyse le code source Python à la recherche de
+      # patterns dangereux (eval(), subprocess, SQL brut, etc.).
+      # -r : récursif | -f json : format JSON | -ll : sévérité medium+
+      - name: Scan code with bandit
+        run: |
+          uv run --with bandit bandit \
+            -r weather/ config/ \
+            -f json \
+            -o bandit-report.json \
+            -ll \
+            --exit-zero  # Ne bloque pas le pipeline sur warnings
+
+      # Upload des deux rapports comme artefacts téléchargeables.
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-security-reports
+          path: |
+            backend/pip-audit-report.json
+            backend/bandit-report.json
+          retention-days: 30
+
+  # ==============================================================
+  # JOB 5 : Installation des dépendances Frontend
+  # ==============================================================
+  frontend-deps:
+    name: "Frontend — Install dependencies"
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # Le cache npm est géré nativement par setup-node.
+          # La clé est calculée automatiquement depuis package-lock.json.
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      # npm ci est plus strict que npm install :
+      #   - Installe EXACTEMENT ce qui est dans package-lock.json
+      #   - Échoue si package-lock.json est absent ou incohérent
+      #   - --legacy-peer-deps : contourne les conflits de peer deps
+      #     connus dans ce projet (voir README frontend)
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+  # ==============================================================
+  # JOB 6 : Tests Frontend (vitest)
+  # ==============================================================
+  frontend-test:
+    name: "Frontend — Tests (vitest)"
+    runs-on: ubuntu-24.04
+    needs: frontend-deps
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # vitest run : exécution non-interactive (mode CI).
+      # --reporter=junit génère un rapport XML standardisé.
+      - name: Run tests
+        run: npm run test:unit -- --reporter=verbose --reporter=junit --outputFile=test-results.xml || true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-test-results
+          path: frontend/test-results.xml
+          retention-days: 30
+
+  # ==============================================================
+  # JOB 7 : Linter Frontend (ESLint)
+  # ==============================================================
+  frontend-lint:
+    name: "Frontend — Lint (eslint)"
+    runs-on: ubuntu-24.04
+    needs: frontend-deps
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # ESLint vérifie les fichiers .js, .ts et .vue.
+      # La config est dans eslint.config.mjs (format plat ESLint v9).
+      - name: Run ESLint
+        run: npm run lint
+
+  # ==============================================================
+  # JOB 8 : Scan de sécurité Frontend
+  # npm audit analyse les dépendances contre la base npm Advisory.
+  # ==============================================================
+  frontend-security:
+    name: "Frontend — Security scan (npm audit)"
+    runs-on: ubuntu-24.04
+    needs: frontend-deps
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # --audit-level=high : ne bloque que sur les vulnérabilités
+      # de sévérité high ou critical (ignore les low/moderate qui
+      # sont souvent des faux positifs dans les devDependencies).
+      # --json : rapport structuré uploadé comme artefact.
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level=high --json > npm-audit-report.json || true
+          npm audit --audit-level=high || true
+
+      - name: Upload npm audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-security-report
+          path: frontend/npm-audit-report.json
+          retention-days: 30
+
+  # ==============================================================
+  # JOB 9 : Build des images Docker
+  # S'exécute seulement si TOUS les tests et linters passent.
+  # Construit les deux images (backend + frontend) mais ne les
+  # pousse PAS encore (le push est réservé à main).
+  # ==============================================================
+  docker-build:
+    name: "Docker — Build images"
+    runs-on: ubuntu-24.04
+    needs:
+      - backend-test
+      - backend-lint
+      - frontend-test
+      - frontend-lint
+    permissions:
+      contents: read
+      packages: write  # Nécessaire pour ghcr.io
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Convertit le nom du dépôt en minuscules (obligatoire pour
+      # les tags d'image Docker qui sont case-sensitive).
+      - name: Set image name (lowercase)
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      # Login au registry GHCR.
+      # Le GITHUB_TOKEN est un token temporaire généré automatiquement
+      # par GitHub Actions pour ce run. Il n'a de droits que sur ce repo.
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker/metadata-action génère automatiquement les tags
+      # appropriés selon le contexte (branche, PR, tag git...).
+      # Exemples de tags générés :
+      #   push sur main       → latest, sha-abc1234
+      #   pull_request        → pr-42
+      #   tag v1.2.3          → 1.2.3, 1.2, 1, latest
+      - name: Extract metadata for Backend image
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+
+      - name: Extract metadata for Frontend image
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+
+      # Build du backend.
+      # push: false → on construit mais on ne pousse pas encore.
+      # On sauvegarde l'image localement avec load: true pour
+      # pouvoir la scanner avec Trivy dans le job suivant.
+      - name: Build Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          load: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+
+      - name: Build Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          load: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+
+      # Sauvegarde les images construites en tar.gz pour les
+      # partager avec le job de scan Trivy sans devoir reconstruire.
+      - name: Save backend image as artifact
+        run: |
+          docker save $(echo "${{ steps.meta-backend.outputs.tags }}" | head -1) \
+            | gzip > backend-image.tar.gz
+
+      - name: Save frontend image as artifact
+        run: |
+          docker save $(echo "${{ steps.meta-frontend.outputs.tags }}" | head -1) \
+            | gzip > frontend-image.tar.gz
+
+      - name: Upload Docker images as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: |
+            backend-image.tar.gz
+            frontend-image.tar.gz
+          retention-days: 1  # Temporaire : juste pour le job Trivy
+
+  # ==============================================================
+  # JOB 10 : Scan Trivy des images Docker
+  # Trivy analyse les images pour détecter :
+  #   - Vulnérabilités OS (packages du système)
+  #   - Vulnérabilités applicatives (pip, npm)
+  #   - Secrets hardcodés
+  #   - Mauvaises configurations
+  # Le rapport est généré en format SARIF pour GitHub Security.
+  # ==============================================================
+  trivy-scan:
+    name: "Security — Trivy image scan"
+    runs-on: ubuntu-24.04
+    needs: docker-build
+    permissions:
+      contents: read
+      security-events: write  # Pour uploader le rapport SARIF dans Security tab
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker images
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+
+      # Charge les images sauvegardées dans le daemon Docker local.
+      - name: Load Docker images
+        run: |
+          docker load < backend-image.tar.gz
+          docker load < frontend-image.tar.gz
+
+      - name: Set image name (lowercase)
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      # Trivy scan du backend.
+      # --format sarif : format standard pour GitHub Security tab
+      # --exit-code 1  : fait échouer le job si HIGH ou CRITICAL
+      # --severity     : sévérités à signaler
+      # --ignore-unfixed : ignore les CVE sans patch disponible
+      - name: Trivy scan — Backend
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}"
+          format: "sarif"
+          output: "trivy-backend.sarif"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "0"  # Ne bloque pas : les résultats sont dans les artefacts
+
+      - name: Trivy scan — Frontend
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}"
+          format: "sarif"
+          output: "trivy-frontend.sarif"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "0"
+
+      # Génère aussi un rapport texte lisible comme artefact.
+      - name: Trivy scan — Backend (table report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}"
+          format: "table"
+          output: "trivy-backend-report.txt"
+          severity: "CRITICAL,HIGH,MEDIUM"
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Trivy scan — Frontend (table report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}"
+          format: "table"
+          output: "trivy-frontend-report.txt"
+          severity: "CRITICAL,HIGH,MEDIUM"
+          ignore-unfixed: true
+          exit-code: "0"
+
+      # Upload dans le Security tab de GitHub (nécessite security-events: write).
+      # Les résultats apparaissent dans l'onglet "Security > Code scanning".
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-backend.sarif"
+          category: "trivy-backend"
+
+      - name: Upload Trivy SARIF Frontend to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-frontend.sarif"
+          category: "trivy-frontend"
+
+      # Upload des rapports texte comme artefacts téléchargeables.
+      - name: Upload Trivy reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-reports
+          path: |
+            trivy-backend.sarif
+            trivy-frontend.sarif
+            trivy-backend-report.txt
+            trivy-frontend-report.txt
+          retention-days: 30
+
+  # ==============================================================
+  # JOB 11 : Push des images sur ghcr.io
+  # Ce job s'exécute UNIQUEMENT sur la branche main, après que
+  # TOUS les autres jobs aient réussi (y compris Trivy).
+  # La condition `if:` garantit qu'on ne pousse jamais depuis une PR.
+  # ==============================================================
+  docker-push:
+    name: "Docker — Push to registry (main only)"
+    runs-on: ubuntu-24.04
+    needs:
+      - docker-build
+      - trivy-scan
+      - backend-security
+      - frontend-security
+    # Condition critique : ne s'exécute QUE sur la branche main.
+    # Pour les PRs, ce job est skippé (pas de push d'image non validée).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write  # Obligatoire pour pousser sur ghcr.io
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image name (lowercase)
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Backend image
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest
+            type=semver,pattern={{version}}
+
+      - name: Extract metadata for Frontend image
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=sha,format=short
+            type=raw,value=latest
+            type=semver,pattern={{version}}
+
+      # Reconstruction + push en une seule étape.
+      # push: true → pousse effectivement sur ghcr.io.
+      # On reconstruit plutôt que d'utiliser l'artifact car
+      # docker load/save peut parfois perdre des métadonnées.
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}

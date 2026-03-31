@@ -1,0 +1,102 @@
+# ============================================================
+# Dependabot — Mises à jour automatiques des dépendances
+#
+# POURQUOI ce fichier :
+#   Dependabot surveille les dépendances et ouvre automatiquement
+#   des Pull Requests quand une nouvelle version est disponible
+#   ou quand une CVE est publiée.
+#
+# IMPACT SUR SCORECARD :
+#   Ce fichier fait passer le critère "Dependency-Update-Tool"
+#   de 0 à 10. C'est l'une des vérifications les plus faciles
+#   à valider.
+#
+# ÉCOSYSTÈMES COUVERTS :
+#   - github-actions : actions GitHub utilisées dans les workflows
+#   - pip            : dépendances Python (backend)
+#   - npm            : dépendances Node.js (frontend)
+# ============================================================
+
+version: 2
+
+updates:
+  # ---- GitHub Actions ----------------------------------------
+  # POURQUOI : les actions GitHub sont des dépendances comme les
+  # autres. Une action compromise (supply chain attack) peut
+  # exécuter du code malveillant dans nos pipelines CI.
+  # Dependabot les maintient à jour ET peut épingler les versions
+  # aux SHA de commits (sécurité maximale).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      frequency: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    # Limite le nombre de PRs ouvertes simultanément pour éviter
+    # de saturer la queue de review.
+    open-pull-requests-limit: 5
+
+  # ---- Python (pip / uv) -------------------------------------
+  # POURQUOI : les bibliothèques Python ont régulièrement des CVE.
+  # Dependabot surveille le répertoire backend/ et met à jour
+  # les dépendances listées dans pyproject.toml.
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      frequency: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    labels:
+      - "dependencies"
+      - "python"
+      - "backend"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    open-pull-requests-limit: 10
+    # Ignore les pre-releases sauf si le projet les utilise déjà.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]  # Optionnel : ignore les patches
+
+  # ---- Node.js (npm) -----------------------------------------
+  # POURQUOI : l'écosystème npm est particulièrement sujet aux
+  # attaques de supply chain (ex: event-stream, ua-parser-js).
+  # Maintenir les dépendances à jour est critique.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      frequency: "weekly"
+      day: "wednesday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "frontend"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    open-pull-requests-limit: 10
+    # Groupe les mises à jour Nuxt/Vue ensemble pour éviter d'avoir
+    # 20 PRs séparées quand l'écosystème est mis à jour.
+    groups:
+      nuxt-ecosystem:
+        patterns:
+          - "nuxt*"
+          - "@nuxt/*"
+          - "vue*"
+          - "@vue/*"
+      testing:
+        patterns:
+          - "vitest*"
+          - "@vitest/*"
+          - "@nuxt/test-utils"

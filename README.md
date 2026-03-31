@@ -2,6 +2,13 @@
 
 Projet Data For Good - Saison 14
 
+## CI/CD Status
+
+[![CI](https://github.com/dataforgoodfr/14_ValorisationDonneeMeteo/actions/workflows/ci.yml/badge.svg)](https://github.com/dataforgoodfr/14_ValorisationDonneeMeteo/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/dataforgoodfr/14_ValorisationDonneeMeteo/actions/workflows/codeql.yml/badge.svg)](https://github.com/dataforgoodfr/14_ValorisationDonneeMeteo/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dataforgoodfr/14_ValorisationDonneeMeteo/badge)](https://scorecard.dev/viewer/?uri=github.com/dataforgoodfr/14_ValorisationDonneeMeteo)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/0/badge)](https://www.bestpractices.dev/projects/0)
+
 ## Structure du projet
 
 ```

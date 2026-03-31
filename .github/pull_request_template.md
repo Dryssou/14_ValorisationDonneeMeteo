@@ -1,45 +1,33 @@
-## Type de PR
-- [ ] Bugfix
-- [ ] Feature
-- [ ] Refactor
-- [ ] Chore / Tech debt
-- [ ] Documentation
-- [ ] Autre (à préciser)
+## Description
 
-## Objectif
-<!-- Problème résolu ou fonctionnalité apportée. Une phrase claire. -->
+<!-- Décris clairement les changements apportés et leur motivation. -->
 
-## Contexte
-<!-- Contexte fonctionnel ou technique nécessaire à la revue. -->
-<!-- Lien(s) vers issue(s), discussion(s), doc(s). -->
 
-## Changements
--
+## Issues liées
 
-## Décisions techniques
-<!-- Choix structurants, arbitrages, compromis. -->
-<!-- Ce qui aurait pu être fait autrement. -->
+<!-- Référence les issues concernées : "Closes #123", "Fixes #456", "Related to #789" -->
 
-## Impacts
-- [ ] API / contrat
-- [ ] Modèle de données / DB
-- [ ] Calculs métier
-- [ ] Performance
-- [ ] Sécurité
-- [ ] Infra / déploiement
-- [ ] Aucun impact transverse identifié
+- Closes #
 
-## Tests
-<!-- Décris ce qui a été fait dans cette PR pour vérifier le comportement introduit ou modifié. -->
-- [ ] Tests unitaires
-- [ ] Tests d’intégration
-- [ ] Tests manuels
-- [ ] Non applicable (à justifier)
+## Tests effectués
 
-## Points d’attention pour la review
-<!-- Parties sensibles du code, dette technique introduite, risques. -->
+<!-- Décris comment tu as testé tes changements. -->
 
-## Suivi
-- [ ] Migration à prévoir
-- [ ] Documentation à mettre à jour
-- [ ] Tâche(s) de suivi à créer
+- [ ] Tests unitaires (`uv run pytest`)
+- [ ] Tests d'intégration
+- [ ] Test manuel via curl / Swagger UI (`http://localhost:8000/api/docs/`)
+- [ ] Test du frontend (`http://localhost:3000`)
+
+```bash
+# Commandes de test utilisées
+uv run pytest
+```
+
+## Checklist
+
+- [ ] Mon code respecte le style du projet (`uv run ruff check .`)
+- [ ] J'ai mis à jour la documentation si nécessaire
+- [ ] Mes commits sont atomiques et bien nommés
+- [ ] J'ai résolu tous les conflits
+- [ ] La PR cible la bonne branche (`main` ou branche de feature)
+- [ ] Je n'ai pas introduit de secrets ou credentials dans le code

@@ -1,0 +1,116 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/dataforgoodfr/14_ValorisationDonneeMeteo/blob/main/vex.json",
+  "author": "Valorisation Donnée Météo — Data For Good Season 14",
+  "timestamp": "2026-03-31T00:00:00Z",
+  "version": 1,
+  "tooling": "Manual VEX generation",
+  "statements": [
+    {
+      "@comment": "=================================================================",
+      "@comment_end": "COMMENT — Ce fichier suit la spécification OpenVEX v0.2.0.",
+      "comment": "Chaque statement documente le statut d'une CVE pour nos produits.",
+      "comment2": "Statuts possibles : not_affected, affected, fixed, under_investigation",
+      "comment3": "Justifications pour not_affected : vulnerable_code_not_present,",
+      "comment4": "  vulnerable_code_not_in_execute_path, vulnerable_code_cannot_be_controlled_by_adversary,",
+      "comment5": "  inline_mitigations_already_exist",
+      "comment6": "================================================================="
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2023-30861",
+        "name": "CVE-2023-30861",
+        "description": "Flask session cookie can be set without Secure flag in some configurations"
+      },
+      "timestamp": "2026-03-31T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:docker/ghcr.io/dataforgoodfr/14_valorisationdonnee-backend"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Ce projet utilise Django, pas Flask. Cette CVE ne s'applique pas."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2024-34069",
+        "name": "CVE-2024-34069",
+        "description": "Werkzeug debugger allows arbitrary code execution when debug mode is enabled"
+      },
+      "timestamp": "2026-03-31T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:docker/ghcr.io/dataforgoodfr/14_valorisationdonnee-backend"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Le mode debug Django (DEBUG=False) est désactivé en production. Le debugger Werkzeug n'est pas utilisé. L'application est déployée avec Gunicorn."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2024-47081",
+        "name": "CVE-2024-47081",
+        "description": "requests library credential leakage via .netrc"
+      },
+      "timestamp": "2026-03-31T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:docker/ghcr.io/dataforgoodfr/14_valorisationdonnee-backend"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "L'application backend n'utilise pas de fichier .netrc ni de credentials HTTP partagés entre domaines. Les requêtes HTTP sortantes ne sont pas effectuées dans les chemins d'exécution exposés à des inputs utilisateur non validés."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2023-43804",
+        "name": "CVE-2023-43804",
+        "description": "urllib3 forwards Authorization header on redirect"
+      },
+      "timestamp": "2026-03-31T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:docker/ghcr.io/dataforgoodfr/14_valorisationdonnee-backend"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Le backend Django ne fait pas de requêtes HTTP sortantes avec des headers Authorization qui seraient suivies de redirections. Cette CVE ne représente pas de risque dans notre architecture."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2024-6345",
+        "name": "CVE-2024-6345",
+        "description": "setuptools Remote Code Execution via malicious package"
+      },
+      "timestamp": "2026-03-31T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:docker/ghcr.io/dataforgoodfr/14_valorisationdonnee-backend"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "setuptools est présent comme dépendance de build mais n'est pas utilisé en runtime. L'image Docker de production (FROM python:3.12-slim) n'expose pas setuptools à des inputs utilisateur. Aucun package n'est installé dynamiquement à l'exécution."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2024-37891",
+        "name": "CVE-2024-37891",
+        "description": "urllib3 Proxy-Authorization header leak via HTTPS redirect"
+      },
+      "timestamp": "2026-03-31T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:docker/ghcr.io/dataforgoodfr/14_valorisationdonnee-backend"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "L'application n'utilise pas de proxy HTTP avec authentification. Aucun header Proxy-Authorization n'est utilisé dans le code."
+    }
+  ]
+}

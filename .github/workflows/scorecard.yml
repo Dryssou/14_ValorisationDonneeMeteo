@@ -1,0 +1,104 @@
+# ============================================================
+# OpenSSF Scorecard — Analyse de la sécurité du projet
+#
+# POURQUOI ce workflow :
+#   Scorecard est un outil de l'Open Source Security Foundation
+#   qui évalue automatiquement les bonnes pratiques de sécurité
+#   d'un dépôt GitHub sur 18 critères (branch protection, tests,
+#   pinned deps, SAST, etc.).
+#
+# CE QUE ÇA FAIT :
+#   1. Lance l'analyse Scorecard sur ce dépôt
+#   2. Génère un rapport SARIF
+#   3. Uploade les résultats dans l'onglet Security de GitHub
+#   4. Les résultats sont aussi visibles sur scorecard.dev
+#
+# DÉCLENCHEURS :
+#   - push sur main         → analyse après chaque merge
+#   - schedule              → analyse hebdomadaire (dimanche)
+#   - workflow_dispatch     → permet un déclenchement manuel
+#
+# NOTE SÉCURITÉ : Les permissions sont strictement limitées.
+# Le token de lecture et security-events:write sont les seuls
+# droits nécessaires pour ce workflow.
+# ============================================================
+
+name: Scorecard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Tous les dimanches à 2h UTC — analyse régulière
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+# Permissions minimales requises par Scorecard.
+# id-token: write est nécessaire pour publier les résultats
+# sur scorecard.dev via OIDC (sans stocker de secrets).
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+jobs:
+  scorecard:
+    name: "OpenSSF Scorecard analysis"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # persist-credentials: false est OBLIGATOIRE pour Scorecard.
+          # Cela empêche le token GitHub d'être exposé dans l'historique
+          # git et dans les sous-processus.
+          persist-credentials: false
+
+      # L'action Scorecard officielle de l'OSSF.
+      # Elle analyse automatiquement :
+      #   - Branch-Protection    : protection de main
+      #   - CI-Tests             : présence de tests CI
+      #   - Code-Review          : reviews obligatoires sur les PRs
+      #   - Contributors         : diversité des contributeurs
+      #   - Dangerous-Workflow   : permissions excessives dans les workflows
+      #   - Dependency-Update-Tool : Dependabot ou Renovate configuré
+      #   - Fuzzing              : tests de fuzzing
+      #   - License              : fichier LICENSE présent
+      #   - Maintained           : activité récente sur le dépôt
+      #   - Packaging            : publication de packages
+      #   - Pinned-Dependencies  : actions GitHub épinglées à un SHA
+      #   - SAST                 : analyse statique de code
+      #   - Security-Policy      : fichier SECURITY.md présent
+      #   - Signed-Releases      : releases signées
+      #   - Token-Permissions    : permissions minimales dans les workflows
+      #   - Vulnerabilities      : pas de CVE ouvertes
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@v2.4.0
+        with:
+          results_file: scorecard-results.sarif
+          results_format: sarif
+          # SCORECARD_TOKEN : token GitHub avec accès en lecture.
+          # Créer un Personal Access Token (classic) avec scope "public_repo"
+          # et l'ajouter comme secret SCORECARD_TOKEN dans les settings du repo.
+          # Sans ce token, Scorecard peut être limité par le rate limiting GitHub API.
+          # Si le secret n'est pas configuré, on utilise le GITHUB_TOKEN par défaut.
+          repo_token: ${{ secrets.SCORECARD_TOKEN || secrets.GITHUB_TOKEN }}
+          # publish_results: true publie les résultats publiquement sur scorecard.dev
+          # Ce n'est possible que pour les dépôts publics.
+          publish_results: true
+
+      # Upload du rapport SARIF dans l'onglet Security > Code scanning.
+      # Permet de voir les recommandations directement dans l'interface GitHub.
+      - name: Upload SARIF results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scorecard-results.sarif
+
+      # Sauvegarde le rapport complet comme artefact téléchargeable.
+      - name: Upload Scorecard results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-results
+          path: scorecard-results.sarif
+          retention-days: 30

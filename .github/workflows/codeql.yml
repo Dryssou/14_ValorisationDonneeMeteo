@@ -1,0 +1,86 @@
+# ============================================================
+# CodeQL — Analyse statique de sécurité (SAST)
+#
+# POURQUOI ce workflow :
+#   CodeQL est l'outil SAST (Static Application Security Testing)
+#   de GitHub. Il analyse le code source Python et JavaScript/
+#   TypeScript pour détecter des failles de sécurité AVANT
+#   qu'elles n'atteignent la production.
+#
+# CE QUE ÇA DÉTECTE (exemples) :
+#   Python :
+#     - Injections SQL (format strings dans les requêtes)
+#     - Path traversal (os.path.join avec des inputs utilisateur)
+#     - Désérialisation non sécurisée (pickle.loads)
+#     - XSS dans les templates
+#   JavaScript/TypeScript :
+#     - Prototype pollution
+#     - ReDoS (Regular Expression DoS)
+#     - DOM-based XSS
+#
+# CE WORKFLOW AMÉLIORE LE SCORE SCORECARD sur le critère "SAST".
+#
+# DÉCLENCHEURS :
+#   - push sur main
+#   - pull_request → main
+#   - schedule     → analyse hebdomadaire
+# ============================================================
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Tous les lundis à 3h UTC
+    - cron: "0 3 * * 1"
+
+# Permissions strictement limitées au minimum requis par CodeQL.
+permissions:
+  contents: read
+  actions: read
+  security-events: write  # Pour uploader les résultats dans Security tab
+
+jobs:
+  codeql:
+    name: "SAST — CodeQL (${{ matrix.language }})"
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Analyse les deux langages du projet.
+        # CodeQL supporte aussi : cpp, csharp, go, java, ruby, swift
+        language: ["python", "javascript-typescript"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Initialise CodeQL et configure les langages à analyser.
+      # CodeQL construit une base de données représentant le code.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # "security-and-quality" inclut les règles de sécurité ET
+          # de qualité de code. "security-extended" ajoute des règles
+          # experimentales mais génère plus de faux positifs.
+          queries: security-and-quality
+
+      # Pour Python, CodeQL n'a pas besoin de compiler le code.
+      # Pour JavaScript/TypeScript, CodeQL parse le code directement.
+      # L'autobuild convient parfaitement pour ces deux langages.
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      # Lance l'analyse et uploade les résultats dans le Security tab.
+      # Les résultats apparaissent dans "Security > Code scanning alerts".
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+          # Upload des résultats même en cas d'erreur partielle.
+          upload: true

@@ -1,0 +1,35 @@
+# ============================================================
+# CODEOWNERS — Reviewers obligatoires par chemin de fichier
+#
+# POURQUOI ce fichier :
+#   GitHub utilise CODEOWNERS pour assigner automatiquement des
+#   reviewers aux Pull Requests selon les fichiers modifiés.
+#   Couplé à la branch protection (require code owner review),
+#   il garantit qu'aucun fichier critique n'est mergé sans review.
+#
+# IMPACT SUR SCORECARD :
+#   Ce fichier contribue au critère "Code-Review" de Scorecard.
+#
+# SYNTAXE :
+#   <pattern>  <@github-username ou @org/team>
+# ============================================================
+
+# Règle par défaut : tous les fichiers nécessitent une review
+# de l'équipe principale.
+*  @Dryss
+
+# Les workflows CI/CD sont des fichiers critiques de sécurité.
+# Une modification malveillante pourrait exfiltrer des secrets
+# ou compromettre le pipeline. Review obligatoire.
+.github/workflows/  @Dryss
+
+# La configuration de sécurité doit être reviewée avec attention.
+SECURITY.md         @Dryss
+vex.json            @Dryss
+.github/dependabot.yml @Dryss
+
+# Le code backend (API Django) manipule des données météo.
+backend/  @Dryss
+
+# Le code frontend.
+frontend/ @Dryss
