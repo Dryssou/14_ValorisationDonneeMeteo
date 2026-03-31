@@ -522,17 +522,20 @@ jobs:
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
 
-      # Sauvegarde les images construites en tar.gz pour les
-      # partager avec le job de scan Trivy sans devoir reconstruire.
-      - name: Save backend image as artifact
+      # Retague les images avec un nom fixe "local-scan" avant de
+      # les sauvegarder. Cela garantit que le job trivy-scan peut
+      # toujours référencer la même image par le même tag, peu
+      # importe la branche ou le SHA du commit.
+      - name: Tag images for local scan
         run: |
-          docker save $(echo "${{ steps.meta-backend.outputs.tags }}" | head -1) \
-            | gzip > backend-image.tar.gz
+          docker tag $(echo "${{ steps.meta-backend.outputs.tags }}" | head -1) local-backend:scan
+          docker tag $(echo "${{ steps.meta-frontend.outputs.tags }}" | head -1) local-frontend:scan
+
+      - name: Save backend image as artifact
+        run: docker save local-backend:scan | gzip > backend-image.tar.gz
 
       - name: Save frontend image as artifact
-        run: |
-          docker save $(echo "${{ steps.meta-frontend.outputs.tags }}" | head -1) \
-            | gzip > frontend-image.tar.gz
+        run: docker save local-frontend:scan | gzip > frontend-image.tar.gz
 
       - name: Upload Docker images as artifacts
         uses: actions/upload-artifact@v4
@@ -586,17 +589,17 @@ jobs:
       - name: Trivy scan — Backend
         uses: aquasecurity/trivy-action@v0.35.0
         with:
-          image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}"
+          image-ref: "local-backend:scan"
           format: "sarif"
           output: "trivy-backend.sarif"
           severity: "CRITICAL,HIGH"
           ignore-unfixed: true
-          exit-code: "0"  # Ne bloque pas : les résultats sont dans les artefacts
+          exit-code: "0"
 
       - name: Trivy scan — Frontend
         uses: aquasecurity/trivy-action@v0.35.0
         with:
-          image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}"
+          image-ref: "local-frontend:scan"
           format: "sarif"
           output: "trivy-frontend.sarif"
           severity: "CRITICAL,HIGH"
@@ -607,7 +610,7 @@ jobs:
       - name: Trivy scan — Backend (table report)
         uses: aquasecurity/trivy-action@v0.35.0
         with:
-          image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}"
+          image-ref: "local-backend:scan"
           format: "table"
           output: "trivy-backend-report.txt"
           severity: "CRITICAL,HIGH,MEDIUM"
@@ -617,7 +620,7 @@ jobs:
       - name: Trivy scan — Frontend (table report)
         uses: aquasecurity/trivy-action@v0.35.0
         with:
-          image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}"
+          image-ref: "local-frontend:scan"
           format: "table"
           output: "trivy-frontend-report.txt"
           severity: "CRITICAL,HIGH,MEDIUM"
