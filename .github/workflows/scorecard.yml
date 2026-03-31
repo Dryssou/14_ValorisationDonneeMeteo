@@ -86,7 +86,9 @@ jobs:
           repo_token: ${{ secrets.SCORECARD_TOKEN || secrets.GITHUB_TOKEN }}
           # publish_results: true publie les résultats publiquement sur scorecard.dev
           # Ce n'est possible que pour les dépôts publics.
-          publish_results: true
+          # publish_results ne fonctionne qu'avec les repos publics.
+          # Mettre à true si le repo est rendu public.
+          publish_results: false
 
       # Upload du rapport SARIF dans l'onglet Security > Code scanning.
       # Permet de voir les recommandations directement dans l'interface GitHub.
