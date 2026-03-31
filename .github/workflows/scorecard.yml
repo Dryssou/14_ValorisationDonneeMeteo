@@ -38,17 +38,19 @@ on:
 # sur scorecard.dev via OIDC (sans stocker de secrets).
 permissions:
   contents: read
-  id-token: write
-  security-events: write
 
 jobs:
   scorecard:
     name: "OpenSSF Scorecard analysis"
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           # persist-credentials: false est OBLIGATOIRE pour Scorecard.
           # Cela empêche le token GitHub d'être exposé dans l'historique
@@ -74,7 +76,7 @@ jobs:
       #   - Token-Permissions    : permissions minimales dans les workflows
       #   - Vulnerabilities      : pas de CVE ouvertes
       - name: Run Scorecard analysis
-        uses: ossf/scorecard-action@v2.4.0
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
@@ -93,13 +95,13 @@ jobs:
       # Upload du rapport SARIF dans l'onglet Security > Code scanning.
       # Permet de voir les recommandations directement dans l'interface GitHub.
       - name: Upload SARIF results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699
         with:
           sarif_file: scorecard-results.sarif
 
       # Sauvegarde le rapport complet comme artefact téléchargeable.
       - name: Upload Scorecard results as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: scorecard-results
           path: scorecard-results.sarif
