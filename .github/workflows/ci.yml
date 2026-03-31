@@ -584,7 +584,7 @@ jobs:
       # --severity     : sévérités à signaler
       # --ignore-unfixed : ignore les CVE sans patch disponible
       - name: Trivy scan — Backend
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}"
           format: "sarif"
@@ -594,7 +594,7 @@ jobs:
           exit-code: "0"  # Ne bloque pas : les résultats sont dans les artefacts
 
       - name: Trivy scan — Frontend
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}"
           format: "sarif"
@@ -605,7 +605,7 @@ jobs:
 
       # Génère aussi un rapport texte lisible comme artefact.
       - name: Trivy scan — Backend (table report)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}"
           format: "table"
@@ -615,7 +615,7 @@ jobs:
           exit-code: "0"
 
       - name: Trivy scan — Frontend (table report)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: "ghcr.io/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}"
           format: "table"
